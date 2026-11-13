@@ -378,6 +378,8 @@ public sealed partial class World : IDisposable
     /// Loose items lying in the world, so far the severed limbs combat drops (docs/simulation.md "Ground items").
     /// </summary>
     public Items.GroundItems GroundItems { get; } = new();
+
+
     /// <summary>
     /// The loose-item slots of the towns' interiors (docs/simulation.md "Ground items"); hashed once a town with any registered.
     /// </summary>

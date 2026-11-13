@@ -57,6 +57,7 @@ public sealed record GroundItem(int Id, ItemInstance Item, Vector3 Position, Qua
 /// </summary>
 public sealed class GroundItems
 {
+    public HashSet<string> PickedUpIds { get; } = new(StringComparer.Ordinal);
     /// <summary>
     /// The default and largest <see cref="Limit"/>.
     /// </summary>
@@ -160,10 +161,17 @@ public sealed class GroundItems
     public GroundItem? Take(int id)
     {
         int k = _items.FindIndex(i => i.Id == id);
-        if (k < 0) return null;
+        if (k < 0)
+            return null;
+
+        // we don't want this item respawning. Set PickedUp to true for a check on load to ensure that doesn't happen.
         var taken = _items[k];
+        if (taken.Item.Saved?.StringId is { } savedId)
+            PickedUpIds.Add(savedId);
+
         _items.RemoveAt(k);
         Revision++;
+
         return taken;
     }
 

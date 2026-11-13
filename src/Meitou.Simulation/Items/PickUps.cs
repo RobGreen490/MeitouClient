@@ -230,6 +230,7 @@ public sealed class PickUps : ITaskHandler, IOrderOwner
             else
             {
                 item.Item.Mark = mark;
+                
 
                 // Task_Pickup sounds when any of the stack went in.
                 if (item.Item.Quantity < before) world.EmitSound(SoundKind.PickedUp, s, next[s].Position);

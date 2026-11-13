@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Numerics;
-using System.Text.RegularExpressions;
 using Meitou.Data.Fcs;
 
 namespace Meitou.Data.Save;
@@ -33,7 +32,9 @@ public static partial class SaveGroundItems
         foreach (var i in list.Instances)
         {
             if (byId.TryGetValue(i.Target, out var r) && r.RecordType == FcsRecordType.Item)
+            {
                 found.Add(new SaveGroundItem(i, r, SaveInventory.ItemOf(r)));
+            }
         }
         return found;
     }
@@ -50,8 +51,22 @@ public static partial class SaveGroundItems
         var file = zone.File;
         if (zone.ItemList is { } old)
         {
-            var targets = old.Instances.Select(i => i.Target).ToHashSet(StringComparer.Ordinal);
-            file.Records.RemoveAll(r => ReferenceEquals(r, old) || (r.RecordType == FcsRecordType.Item && targets.Contains(r.StringId)));
+            var targets = old.Instances
+                .Select(i => i.Target)
+                .ToHashSet(StringComparer.Ordinal);
+
+            int removed = file.Records.RemoveAll(r =>
+                ReferenceEquals(r, old) ||
+                (r.RecordType == FcsRecordType.Item &&
+                 targets.Contains(r.StringId)));
+            Console.WriteLine($"*****************************************");
+            Console.WriteLine($"RECORDS REMOVED: {removed}");
+
+            var remaining = file.Records
+                .Where(r => r.StringId == "30-zone20.32-INGAME")
+                .ToList();
+
+            Console.WriteLine($"MATCHING RECORDS REMAINING: {remaining.Count}");
         }
         if (items.Count + kept.Count == 0) return;
         var list = new FcsRecord { Type = (int)FcsRecordType.InstanceCollection, Id = NextNumber(file), Name = "0", StringId = ListId };
@@ -61,7 +76,11 @@ public static partial class SaveGroundItems
         int entry = 0;
         foreach (var k in kept)
         {
-            if (!taken.Add(k.Record.StringId)) continue;
+            if (!taken.Add(k.Record.StringId))
+            {
+                Console.WriteLine($"***** was an item recorded? {k.Record.StringId}");
+                continue;  
+            }
             file.Records.Add(k.Record);
             list.Instances.Add(new FcsInstance
             {

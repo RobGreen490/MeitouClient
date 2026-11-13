@@ -22,25 +22,36 @@ public static class GroundItemSave
     public static int Load(SaveGame save, World world, ItemFactory factory, Func<string, int>? factionOf = null)
     {
         int missing = 0;
+        var pickedUpIds = world.GroundItems.PickedUpIds;
+        Console.WriteLine($"**********\npicked up count in the loader: {pickedUpIds.Count}");
         var handles = factionOf is null ? null : save.BuildHandles();
         foreach (var zone in save.Zones.Values)
         {
+            // display zone id and a count of allSavedGroundItems
             foreach (var g in SaveGroundItems.Read(zone))
             {
                 if (SavedKit.ItemOf(g.Item, factory) is { } item)
                 {
-                    int owner = handles is null || g.Item.Source is not { } r ? -1 : OwnerOf(r, handles, factionOf!);
-                    int stolen = MarkStolen(item, g.Item, factionOf);
-                    if (owner < 0) owner = stolen;
-                    world.GroundItems.Load(item, g.Instance.Position, g.Instance.Rotation, owner);
+                    if (!pickedUpIds.Contains(g.Record.StringId))
+                    {
+                        int owner = handles is null || g.Item.Source is not { } r ? -1 : OwnerOf(r, handles, factionOf!);
+                        int stolen = MarkStolen(item, g.Item, factionOf);
+                        if (owner < 0) owner = stolen;
+                        world.GroundItems.Load(item, g.Instance.Position, g.Instance.Rotation, owner);
+                    }
+                    else
+                    {
+                        Console.WriteLine("*** This message should appear if an item is skipped, but it doesn't.");
+                        missing++;
+                    }
                 }
                 else
                 {
                     missing++;
                 }
             }
+            Console.WriteLine($"***** zone#: {zone.Coordinate}  ground items count: {SaveGroundItems.Read(zone).Count}");
         }
-
         return missing;
     }
 
@@ -87,12 +98,47 @@ public static class GroundItemSave
         {
             var items = byZone.GetValueOrDefault(z) ?? [];
             game.Zones.TryGetValue(z, out var zone);
+
+            // contains all ground items from the previous save file.
             var old = zone is null ? [] : SaveGroundItems.Read(zone);
-            var kept = old.Where(o => factory.Create(o.Item.BaseId) is null).ToList();
+            var pickedUpIds = world.GroundItems.PickedUpIds;
+            // Contains old items that the factory cannot recreate. These are preserved so they aren't lost when saving.
+            var kept = old
+                .Where(o => factory.Create(o.Item.BaseId) is null)
+                .Where(o => !pickedUpIds.Contains(o.Record.StringId))
+                .ToList();
+            // Contains the StringId values of every item in old. Used to check whether previously saved items still exist in the current game world.
             var named = old.Select(o => o.Record.StringId).ToHashSet(StringComparer.Ordinal);
-            bool unchanged = zone is not null && items.All(i => i.Item.Saved is { } s && named.Contains(s.StringId))
+            var worldIds = items.Select(i => i.Item.Saved?.StringId).Where(id => id is not null).ToHashSet(StringComparer.Ordinal);
+            bool unchanged = zone is not null
+                && items.All(i => i.Item.Saved is { } s && named.Contains(s.StringId))
+                && worldIds.SetEquals(named) // ← every saved entry is still in the world (and no extra)
                 && items.Count + kept.Count == old.Count;
-            if (unchanged) continue;
+            if (unchanged)
+                continue;
+
+            // Console.WriteLine($"****KEPT COUNT: {kept.Count}");
+            // Console.WriteLine($"****OLD COUNT: {old.Count}");
+            // foreach (var item in old)
+            // {
+            //     Console.WriteLine($"SAVED ID: {item.Record.StringId}");
+            //     Console.WriteLine($"PICKED UP: {pickedUpIds.Contains(item.Record.StringId)}");
+            //     Console.WriteLine("--------------------------------");
+            // }
+            old.RemoveAll(item =>
+            {
+                bool pickedUp = pickedUpIds.Contains(item.Record.StringId);
+                if (pickedUp)
+                {
+                    Console.WriteLine("********************************************");
+                    Console.WriteLine($"Removed item: {item.Record.StringId}");
+                    Console.WriteLine($"**** OLD COUNT BEFORE REMOVAL: {old.Count}");
+                    Console.WriteLine($"pickedUpId Count: {pickedUpIds.Count}");
+                }
+                    return pickedUp;
+            });
+            // Console.WriteLine($"****KEPT COUNT AFTER REMOVAL: {kept.Count}");
+            // Console.WriteLine($"**** OLD COUNT AFTER REMOVAL: {old.Count}");
 
             if (zone is null) game.Zones[z] = zone = new SaveZone(z, new SaveFile());
             var saved = items.Select(i => (i.Position, i.Rotation, Item: SavedKit.FromItem(i.Item))).ToList();
@@ -100,9 +146,9 @@ public static class GroundItemSave
                 if (items[k].Camp is { } camp && items[k].Item.Saved is null) camps.Add((saved[k].Item, camp));
 
             SaveGroundItems.Write(zone, saved, kept);
+
             if (zone.File.Records.Count == 0) game.Zones.Remove(z);
         }
-
         return camps;
     }
 
